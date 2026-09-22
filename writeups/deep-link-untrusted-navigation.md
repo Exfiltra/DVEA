@@ -76,12 +76,39 @@ There's no visible signal that the content came from an attacker rather than the
 itself; the app's main window is untouched, so the victim likely doesn't even notice
 anything unusual happened besides a new window appearing.
 
-**Step 3 — reproduce locally without OS scheme registration.** Running DVEA from source
-(`npm start`) does not reliably register the `dvea://` scheme with the OS (noted on the
-parent Deep Link Hijacking page), so real `dvea://` links won't dispatch to the app during
-development. The lab's "Simulate Deep Link" control exists to exercise the *literally
-identical* vulnerable code path without needing OS registration — it calls the
-`simulate-deeplink-window` IPC handler, which now calls the exact same
+**Step 3 — reproduce locally.** Be precise about what "from source" does and doesn't
+provide, because it's easy to conflate two separate things:
+
+- **OS scheme *routing*** — whether typing `dvea://…` in a browser, or running `xdg-open
+  dvea://…`, causes the OS to launch/signal DVEA. This depends on a registered handler:
+  the `MimeType=x-scheme-handler/dvea` line the maker-deb writes into the installed
+  `.desktop` file. Running from source (`npm start`) does **not** reliably give you this,
+  so the browser-address-bar / `xdg-open` entry point won't work in development. This is
+  what the parent page's "doesn't reliably register the scheme" note refers to.
+- **Deep-link *dispatch*** — whether `handleDeepLink()` actually runs once a `dvea://` URL
+  reaches the process. This is independent of packaging: `main.js` picks the link out of
+  `process.argv` on cold start (`findDeepLinkArg(process.argv)`) and off the second
+  instance's argv via the single-instance lock (`app.on('second-instance', …)`). Neither
+  reads anything OS-registration-specific.
+
+So a **real** `dvea://` link — the genuine `handleDeepLink()` path, not the simulator — *is*
+reproducible from source; you just hand the URL to the process yourself instead of relying
+on the OS to route it. Launch the Electron binary against the project with the link as an
+argument:
+
+```bash
+./node_modules/.bin/electron . 'dvea://navigate?url=https://attacker.example/phish.html'
+```
+
+If no DVEA instance is running, this is the cold-start path (`findDeepLinkArg(process.argv)`
+fires on first load). If one is already running, the single-instance lock routes this
+invocation into the running instance's `second-instance` handler, which calls
+`handleDeepLink()` on the running app — again the real code path. Either way you are
+exercising `handleDeepLink → openUntrustedNavigationWindow`, not a stand-in.
+
+The lab's "Simulate Deep Link" control is a *convenience* on top of this: it skips both OS
+routing and the argv invocation, calling the `simulate-deeplink-window` IPC handler
+directly — which still runs the *literally identical* vulnerable code, the exact same
 `openUntrustedNavigationWindow()` helper `handleDeepLink` uses:
 
 ```js
@@ -117,10 +144,13 @@ target is its absolute path in the repo:
 file:///<path-to-DVEA>/src/renderer/pages/fake-login.html
 ```
 
-For example, `file:///home/user/dvea/src/renderer/pages/fake-login.html`. During
-development the `dvea://` scheme usually isn't OS-registered (see Step 3), so drive this
-through the lab's **Simulate Deep Link** field rather than a real link — the field accepts
-the `file://` URL directly.
+For example, `file:///home/user/dvea/src/renderer/pages/fake-login.html`. Deliver it either
+way described in Step 3: as a real link —
+`./node_modules/.bin/electron . 'dvea://navigate?url=file:///home/user/dvea/src/renderer/pages/fake-login.html'` —
+or, more simply, by pasting the `file://` URL straight into the lab's **Simulate Deep Link**
+field. (The browser-address-bar route won't work from source, since the `dvea://` scheme
+usually isn't OS-registered in development — that's the routing limitation from Step 3, not
+a limit on dispatch.)
 
 *Case B — running from an installed `.deb`.* This is the realistic attack: the OS has
 registered `dvea://`, so a genuine `dvea://navigate?url=file://...` link dispatched from a
