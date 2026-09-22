@@ -104,19 +104,54 @@ route through `openUntrustedNavigationWindow()`, this is not merely a similar re
 it is the same code executing.
 
 **Step 4 — escalate to credential harvesting (bonus).** DVEA bundles a native-looking fake
-login page at `src/renderer/pages/fake-login.html`. Pointing the same `target` at that
-file's resolved `file://` URL — e.g., typing
-`file:///<path-to-DVEA>/src/renderer/pages/fake-login.html` into the field, or, more
-realistically, a `dvea://navigate?url=file:///...fake-login.html` link an attacker who has
-extracted the app's `asar` archive (`npx asar extract app.asar ./out`) could construct —
-opens the popup window showing a "Session Expired — Sign In" prompt. Submitting that form
-sends the entered credentials over the `captured-credentials` IPC channel, which main
-forwards to the lab page's "Attacker view" panel; the login page then calls
-`window.close()` on itself, which only closes that popup — the lab page (and the rest of
-the app) is unaffected, exactly as it would be for a real victim who wouldn't see anything
-crash or misbehave. This is exactly how a phishing deep link would harvest real user
-credentials in the wild, and it works identically whether it was triggered by a real
-`dvea://navigate` link or the in-app simulator.
+login page at `src/renderer/pages/fake-login.html`. Because `target` is handed straight to
+`loadURL()`, a `file://` URL works just as well as an `http(s)://` one — so pointing the
+deep link at that bundled page turns "load attacker content in a trusted window" into a
+full credential-harvesting phish. The exact `file://` path depends on how DVEA is
+running, because the app's files live in a different place in each case.
+
+*Case A — running from source (`npm start`).* The page sits in the working tree, so the
+target is its absolute path in the repo:
+
+```
+file:///<path-to-DVEA>/src/renderer/pages/fake-login.html
+```
+
+For example, `file:///home/user/dvea/src/renderer/pages/fake-login.html`. During
+development the `dvea://` scheme usually isn't OS-registered (see Step 3), so drive this
+through the lab's **Simulate Deep Link** field rather than a real link — the field accepts
+the `file://` URL directly.
+
+*Case B — running from an installed `.deb`.* This is the realistic attack: the OS has
+registered `dvea://`, so a genuine `dvea://navigate?url=file://...` link dispatched from a
+browser, email, or `xdg-open` reaches the app. The only thing that changes is the path,
+because the packaged app no longer lives in your repo — it's installed under the maker-deb
+prefix. Critically, **DVEA is not packaged with `asar`** (`forge.config.js`'s
+`packagerConfig` sets no `asar` key, and `@electron/packager` defaults it to `false`), so
+`resources/app/` is a plain directory of loose files on the real filesystem. No `asar
+extract` step is needed — Chromium's `file://` handler reads the page directly:
+
+```
+dvea://navigate?url=file:///usr/lib/dvea/resources/app/src/renderer/pages/fake-login.html
+```
+
+`/usr/lib/dvea/` is the default install prefix for the `dvea` maker-deb package; if a
+repackage or distro places it elsewhere (e.g. `/opt/dvea/`), resolve the real path on the
+target with `dpkg -L dvea | grep fake-login`. (If DVEA were ever built *with* asar enabled,
+this file would live inside `resources/app.asar` and a plain `file://` URL could **not**
+reach it — Chromium's `file://` protocol cannot traverse an asar archive; only Node `fs`
+and Electron's own `loadFile`/`protocol` layer can. The navigation route uses `loadURL`,
+i.e. the raw `file://` path, so keeping asar off is what makes this specific escalation
+work against a packaged build.)
+
+In both cases the outcome is identical: the popup opens showing a "Session Expired — Sign
+In" prompt. Submitting that form sends the entered credentials over the
+`captured-credentials` IPC channel, which main forwards to the lab page's "Attacker view"
+panel; the login page then calls `window.close()` on itself, which only closes that popup —
+the lab page (and the rest of the app) is unaffected, exactly as it would be for a real
+victim who wouldn't see anything crash or misbehave. This is exactly how a phishing deep
+link would harvest real user credentials in the wild, and it works identically whether it
+was triggered by a real `dvea://navigate` link (Case B) or the in-app simulator (Case A).
 
 ---
 
