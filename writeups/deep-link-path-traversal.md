@@ -79,8 +79,12 @@ Type `/etc/passwd` into the lab's path field and click **Simulate Deep Link** �
 panel shows the raw file contents, fetched by the main process with the app's own
 filesystem permissions.
 
-**Step 4 — confirm against a bundled target.** DVEA ships a small marker file at
-`src/renderer/pages/secret.txt` containing `FAKE_SECRET=flag{dvea_demo_secret}`. The read
+**Step 4 — confirm against a bundled target.** DVEA ships a fake secrets file at
+`src/renderer/pages/secret.txt` — a synthetic `secrets.env`-style dump (fake DB connection
+string, AWS keys, Stripe key, JWT signing secret) carrying the flag
+`DVEA{arbitrary_file_read_via_deep_link}`. It's shaped to look like the kind of credentials
+file an attacker would hope to exfiltrate, so the impact of arbitrary file read is obvious,
+while every value in it is clearly synthetic. The read
 handler passes your path straight to `fs.promises.readFile(openPath)`, and Node resolves a
 *relative* path against `process.cwd()` — so the exact string you supply depends on how DVEA
 is running.
@@ -95,7 +99,8 @@ src/renderer/pages/secret.txt
 Type that into the lab's path field and **Simulate Deep Link**, or fire the real handler
 with `./node_modules/.bin/electron . 'dvea://open?path=src/renderer/pages/secret.txt'`
 (same argv/second-instance dispatch as the Untrusted Navigation lab — see that writeup's
-Step 3). The result panel shows `FAKE_SECRET=flag{dvea_demo_secret}`.
+Step 3). The result panel shows the fake secrets file, including
+`DVEA_FLAG=DVEA{arbitrary_file_read_via_deep_link}`.
 
 *Case B — running from an installed `.deb`.* The relative path from Case A **will not work**:
 when DVEA is launched from a desktop menu or `xdg-open`, `process.cwd()` is typically `/` or
