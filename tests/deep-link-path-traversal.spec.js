@@ -210,7 +210,9 @@ test.describe('Deep Link → Path Traversal', () => {
 
     test('reads the bundled marker file the lab suggests as a first target', async () => {
       await readPath(BUNDLED_SECRET);
-      await expect.poll(() => fileOutput(mainWindow), { timeout: 15_000 }).toContain('FAKE_SECRET');
+      await expect
+        .poll(() => fileOutput(mainWindow), { timeout: 15_000 })
+        .toContain('DVEA{arbitrary_file_read_via_deep_link}');
     });
 
     test('traversal sequences escape the app directory', async () => {

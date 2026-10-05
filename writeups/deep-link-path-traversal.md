@@ -79,13 +79,54 @@ Type `/etc/passwd` into the lab's path field and click **Simulate Deep Link** �
 panel shows the raw file contents, fetched by the main process with the app's own
 filesystem permissions.
 
-**Step 4 — confirm against a bundled target.** DVEA ships a small marker file at
-`src/renderer/pages/secret.txt` containing `FAKE_SECRET=flag{dvea_demo_secret}`. Typing
-`src/renderer/pages/secret.txt` (relative to the app's working directory when launched with
-`npm start`) reproduces the same read against a file that *does* live under the app's own
-pages directory — useful for a reliable, permission-independent demo — while `/etc/passwd`
-or any other absolute path proves the read is not actually confined to that directory at
-all.
+**Step 4 — confirm against a bundled target.** DVEA ships a fake secrets file at
+`src/renderer/pages/secret.txt` — a synthetic `secrets.env`-style dump (fake DB connection
+string, AWS keys, Stripe key, JWT signing secret) carrying the flag
+`DVEA{arbitrary_file_read_via_deep_link}`. It's shaped to look like the kind of credentials
+file an attacker would hope to exfiltrate, so the impact of arbitrary file read is obvious,
+while every value in it is clearly synthetic. The read
+handler passes your path straight to `fs.promises.readFile(openPath)`, and Node resolves a
+*relative* path against `process.cwd()` — so the exact string you supply depends on how DVEA
+is running.
+
+*Case A — running from source (`npm start`).* `process.cwd()` is the repo root, so the
+relative path resolves directly:
+
+```
+src/renderer/pages/secret.txt
+```
+
+Type that into the lab's path field and **Simulate Deep Link**, or fire the real handler
+with `./node_modules/.bin/electron . 'dvea://open?path=src/renderer/pages/secret.txt'`
+(same argv/second-instance dispatch as the Untrusted Navigation lab — see that writeup's
+Step 3). The result panel shows the fake secrets file, including
+`DVEA_FLAG=DVEA{arbitrary_file_read_via_deep_link}`.
+
+*Case B — running from an installed `.deb`.* The relative path from Case A **will not work**:
+when DVEA is launched from a desktop menu or `xdg-open`, `process.cwd()` is typically `/` or
+the user's home directory, not the app's resources dir — so `src/renderer/pages/secret.txt`
+resolves to a nonexistent path and the read fails. Supply the **absolute** path instead. The
+packaged app installs as loose files (no `asar` — see the Untrusted Navigation writeup), so
+`secret.txt` sits on the real filesystem under the maker-deb prefix:
+
+```
+dvea://open?path=/usr/lib/dvea/resources/app/src/renderer/pages/secret.txt
+```
+
+On an installed build the OS has registered `dvea://`, so that link dispatched from a
+browser, email, or `xdg-open` reaches the app and the result panel shows the flag.
+`/usr/lib/dvea/` is the default install prefix; if a repackage or distro places it elsewhere
+(e.g. `/opt/dvea/`), resolve the real path on the target with
+`dpkg -L dvea | grep secret.txt`. (Unlike the fake-login `file://` case, this read goes
+through Node `fs`, not Chromium's `file://` handler — so even if DVEA *were* built with asar,
+`fs.readFile('.../app.asar/src/renderer/pages/secret.txt')` would still succeed, because
+Electron patches Node's `fs` to read transparently inside an asar archive. Packaging choice
+doesn't rescue this one.)
+
+Either way, `secret.txt` is just a convenient, permission-independent demo target that lives
+under the app's own pages directory. Supplying `/etc/passwd` or any other absolute path
+proves the read is not confined to that directory — or to the app — at all, in both source
+and packaged builds.
 
 ---
 
