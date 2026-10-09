@@ -11,6 +11,8 @@ engineers, and trainers. Every "vulnerability" in the app is deliberate, kept ge
 exploitable, and mapped to a real Electron trust boundary — this is not a generic web-app
 vulnerability set relabeled for Electron.
 
+**Presented at:** BSides Toronto 2026 ([talk recording](https://youtu.be/aoojMb4_4Lw)) · SecTor Arsenal 2026
+
 > **This is not the only Electron security training tool.** It's one purpose-built option, aimed
 > at teaching Electron's specific trust boundaries (preload bridges, `contextIsolation`, IPC,
 > protocol handlers) rather than generic web vulnerabilities running inside a desktop shell.
